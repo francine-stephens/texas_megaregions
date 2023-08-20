@@ -5,36 +5,180 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, echo = FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
 library(tidycensus)
 library(tigris)
+library(tmap)
+library(sf)
+library(extrafont)
+loadfonts(device = "win")
 options(tigris_use_cache = TRUE)
 
 
 
 # Mega Region Counties
-sa_atx <- c(
+saa <- c("Bexar",
+            "Comal",
+            "Hays",
+            "Guadalupe",
+            "Caldwell",
+            "Bastrop",
+            "Travis",
+            "Williamson"
 )
 
-dfw <- c()
+dfw <- c("Dallas",
+         "Collin", 
+         "Denton",
+         "Ellis",
+         "Hunt",
+         "Johnson",
+         "Kaufman",
+         "Parker",
+         "Rockwall",
+         "Tarrant",
+         "Wise")
+
+all_counties <- c(saa, dfw)
+county_seats <- c("San Antonio",
+                  "New Braunfels",
+                  "San Marcos",
+                  "Seguin",
+                  "Lockhart",
+                  "Bastrop",
+                  "Austin",
+                  "Georgetown",
+                  "Dallas",
+                  "McKinney",
+                  "Denton",
+                  "Waxahachie",
+                  "Greenville",
+                  "Cleburne",
+                  "Kaufman",
+                  "Weatherford",
+                  "Rockwall",
+                  "Fort Worth",
+                  "Decatur"
+                  )
+
+
+# Table of county names
+county_table <- data.frame(all_counties, county_seats)
+county_table <- county_table %>% 
+  mutate(megaregion = ifelse(all_counties %in% saa, "San Antonio-Austin", "Dallas-Fort Worth"))
+  
+  
 ```
 
 
 
 # Data Import
 ```{r}
+# Population
 pop_estimates <- get_estimates(geography = "county",
-                               variables = c("BIRTHS", "RBIRTH", "DEATHS", "RDEATH",
-                                             "NATURALCHG", "RNATURALCHG", "POPESTIMATE"),
-                               # variables = c("BIRTHS", "RBIRTHS",
-                               #               "DEATH", "RDEATH",
-                               #               "NATURALCHG", #"RNATURALCHG"),
-                               year = 2022
-                               #geometry = TRUE,
-                               #resolution = "20m"
+                               # variables = c("BIRTHS", "RBIRTH", "DEATHS", "RDEATH",
+                               #               "NATURALCHG", "RNATURALCHG", "POPESTIMATE"),
+                               year = 2022,
+                               geometry = TRUE,
+                               resolution = "20m"
                                )
 
+
+# Places
+places_sf <- places(state = "48", year =2022)
+
+county_seats <- places_sf %>% 
+  filter(NAME %in% county_table$county_seats) %>% 
+  mutate(geometry = st_centroid(geometry)) 
+
 ```
+
+# Clean Data
+```{r}
+pop_estimates_aoi <- pop_estimates %>% 
+  mutate(state = substr(GEOID, 1, 2),
+         county_name =  str_remove_all(NAME , " County, Texas")) %>% 
+  filter(state == "48" & county_name %in% county_table$all_counties) %>% 
+  pivot_wider(names_from = "variable",
+              values_from = "value") %>% 
+  mutate(birth_death_ratio = BIRTHS/DEATHS,
+         domestic_int_ratio = DOMESTICMIG/INTERNATIONALMIG) %>% 
+  left_join(., county_table, by = c("county_name" = "all_counties"))
+
+```
+
+# Tabulate pop metrics to mega-region
+```{r}
+metro_pop_counts <- pop_estimates_aoi %>% 
+  group_by(megaregion) %>% 
+  summarize(population = sum(POPESTIMATE, na.rm = TRUE),
+            natural_change = sum(NATURALCHG, na.rm = TRUE),
+            births = sum(BIRTHS, na.rm = TRUE),
+            deaths = sum(DEATHS, na.rm = TRUE),
+            netmig = sum(NETMIG, na.rm = TRUE),
+            international = sum(INTERNATIONALMIG, na.rm = TRUE),
+            domestic = sum(DOMESTICMIG, na.rm = TRUE)
+            ) %>% 
+  ungroup() %>% 
+  mutate(birth_death_ratio = births/deaths,
+         natural_change_rate = natural_change/population * 1000,
+         netmig_rate = netmig/population * 1000,
+         birth_rate = births/population * 1000,
+         deaths_rate = deaths/population * 1000
+         )
+
+metro_pop_counts
+```
+
+# Map counties in Metro Regions
+```{r}
+## Font to Select
+# Rockwell already registered with windowsFonts().
+# Rockwell Condensed already registered with windowsFonts().
+# Rockwell Extra Bold
+
+# SA-A
+saa_county_layer <- pop_estimates_aoi %>%  
+          mutate(COUNTY_NAME = toupper(county_name)) %>%
+         filter(megaregion == "San Antonio-Austin") %>% 
+         st_transform(., crs = 6587)
+
+saa_county_seats <- county_seats %>% 
+  filter(NAME %in% saa_county_layer$county_seats) %>% 
+  mutate(COUNTY_SEAT = toupper(NAME)) %>% 
+         st_transform(., crs = 6587)
+  
+  
+ggplot() + 
+  geom_sf(data = saa_county_layer, 
+          fill = "#e6a532", color = "white", size = 2, linewidth = 2) + 
+  geom_sf(data = saa_county_seats, shape="\u2605", size=10, color = "white") +
+  geom_sf_text(data = saa_county_seats, 
+            aes(label=COUNTY_SEAT, hjust = 1, vjust= -1), size=2.5, color = "white"
+            ) +    
+  geom_sf_text(data = saa_county_layer, 
+               aes(label = COUNTY_NAME), color = "white", fontface = "bold") + 
+  coord_sf(datum = NA) + 
+  ggtitle("San Antonio-Austin") +
+  theme_void(base_family = "Rockwell Extra Bold", base_size = 12)
+
+#ggsave("saa.jpeg")
+
+# DFW
+ggplot(pop_estimates_aoi %>%  
+          mutate(COUNTY_NAME = toupper(county_name)) %>%
+         filter(megaregion == "Dallas-Fort Worth") %>% 
+         st_transform(., crs = 2276)
+ ) + 
+  geom_sf(fill = "#e6a532", color = "white", size = 2, linewidth = 2) + 
+  geom_sf_text(aes(label = COUNTY_NAME), color = "white", fontface = "bold") +
+  coord_sf(datum = NA) + 
+  ggtitle("Dallas-Fort Worth") +
+  theme_void(base_family = "Rockwell Extra Bold",
+             base_size = 12)
+ggsave("dfw.jpeg")
+```
+
