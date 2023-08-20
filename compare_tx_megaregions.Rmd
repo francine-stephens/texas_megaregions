@@ -9,7 +9,6 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
-library(tidycensus)
 library(tigris)
 library(tmap)
 library(sf)
@@ -17,84 +16,21 @@ library(extrafont)
 loadfonts(device = "win")
 options(tigris_use_cache = TRUE)
 
+# Parameters
+data_folder <- "data/"
+outputs_folder <- "outputs/"
+load("geographic_parameters.R")
 
-
-# Mega Region Counties
-saa <- c("Bexar",
-            "Comal",
-            "Hays",
-            "Guadalupe",
-            "Caldwell",
-            "Bastrop",
-            "Travis",
-            "Williamson"
-)
-
-dfw <- c("Dallas",
-         "Collin", 
-         "Denton",
-         "Ellis",
-         "Hunt",
-         "Johnson",
-         "Kaufman",
-         "Parker",
-         "Rockwall",
-         "Tarrant",
-         "Wise")
-
-all_counties <- c(saa, dfw)
-county_seats <- c("San Antonio",
-                  "New Braunfels",
-                  "San Marcos",
-                  "Seguin",
-                  "Lockhart",
-                  "Bastrop",
-                  "Austin",
-                  "Georgetown",
-                  "Dallas",
-                  "McKinney",
-                  "Denton",
-                  "Waxahachie",
-                  "Greenville",
-                  "Cleburne",
-                  "Kaufman",
-                  "Weatherford",
-                  "Rockwall",
-                  "Fort Worth",
-                  "Decatur"
-                  )
-
-
-# Table of county names
-county_table <- data.frame(all_counties, county_seats)
-county_table <- county_table %>% 
-  mutate(megaregion = ifelse(all_counties %in% saa, "San Antonio-Austin", "Dallas-Fort Worth"))
-  
-  
-```
-
-
-
-# Data Import
-```{r}
-# Population
-pop_estimates <- get_estimates(geography = "county",
-                               # variables = c("BIRTHS", "RBIRTH", "DEATHS", "RDEATH",
-                               #               "NATURALCHG", "RNATURALCHG", "POPESTIMATE"),
-                               year = 2022,
-                               geometry = TRUE,
-                               resolution = "20m"
-                               )
-
-
-# Places
-places_sf <- places(state = "48", year =2022)
-
-county_seats <- places_sf %>% 
-  filter(NAME %in% county_table$county_seats) %>% 
-  mutate(geometry = st_centroid(geometry)) 
+# Data
+county_seats_sf<- readRDS(paste0(
+  data_folder, 
+  "county_seats_sf.rds"))
+pop_estimates <- readRDS(paste0(
+  data_folder, 
+  "population_estimates_2022.rds"))
 
 ```
+
 
 # Clean Data
 ```{r}
