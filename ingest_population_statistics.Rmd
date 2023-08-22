@@ -28,6 +28,8 @@ source("geographic_parameters.R")
 # Data Import
 ```{r}
 # Population
+
+## 2022
 pop_estimates <- get_estimates(geography = "county",
                                year = 2022,
                                geometry = TRUE,
@@ -35,6 +37,31 @@ pop_estimates <- get_estimates(geography = "county",
                                )
 
 
+## 2017
+pop_estimates17 <- get_estimates(geography = "county",
+                               year = 2017,
+                               variables = c("POP" 
+                                             # "BIRTHS", 
+                                             # "DEATHS", 
+                                             # "RNATURALINC"
+                                             ),
+                               geometry = TRUE,
+                               resolution = "20m"
+                               )
+```
+
+```{r}
+# Migration Flows
+tx_flows <- get_flows(
+  geography = "county",
+  state = "TX",
+  year = 2020,
+  geometry = TRUE
+  )
+```
+
+
+```{r}
 # Places
 places_sf <- places(state = "48", year =2022)
 
@@ -49,6 +76,12 @@ county_seats <- places_sf %>%
 ```{r}
 write_rds(pop_estimates, paste0(data_folder,
                                 "population_estimates_2022.rds"))
+write_rds(pop_estimates17, paste0(data_folder, 
+                                  "population_estimates_2017.rds"))
+
+write_rds(tx_flows, paste0(data_folder, 
+                                  "migration_flows_2022_sf.rds"))
+
 
 write_rds(county_seats, paste0(data_folder, 
                                "county_seats_sf.rds"))
