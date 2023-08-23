@@ -1,0 +1,31 @@
+## SAA Top 10
+TX
+CA
+NY
+FL
+AZ
+WA
+CO
+IL
+NJ
+VA
+PA
+NC
+
+
+## DFW Top 10
+TX
+CA
+NY
+FL
+OK
+IL
+LA
+PA
+NJ
+MO
+AZ
+CO
+MI
+VA
+MN

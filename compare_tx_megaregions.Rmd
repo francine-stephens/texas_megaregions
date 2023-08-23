@@ -13,10 +13,12 @@ library(tigris)
 library(tmap)
 library(sf)
 library(extrafont)
+library(gt)
 loadfonts(device = "win")
 options(tigris_use_cache = TRUE)
 
 # Parameters
+wd <- getwd()
 data_folder <- "data/"
 outputs_folder <- "outputs/"
 source("geographic_parameters.R")
@@ -33,7 +35,10 @@ pop_estimates <- readRDS(paste0(
 pop_estimates17 <- readRDS(paste0(
   data_folder, 
   "population_estimates_2017.rds"))
-
+flows <- readRDS(paste0(
+  data_folder, 
+  "migration_flows_2022_sf.rds"))
+cw <- readxl::read_excel("cbsa_met_county_fips_cw.xlsx")
 
 ```
 
@@ -77,6 +82,281 @@ pop_change_cities %>%
 
 ```
 
+# Pop Flows
+```{r}
+
+## TX
+dfw_geoids <- c("48113",
+                "48439",
+                "48085",
+                "48121",
+                "48251",
+                "48139",
+                "48397",
+                "48257",
+                "48367",
+                "48497",
+                "48231")
+
+hou_geoids <- c("48201",
+                "48157",
+                "48339",
+                "48039",
+                "48167",
+                "48473",
+                "48291",
+                "48015",
+                "48071")
+# Harris, Montgomery, Liberty, Chambers, Galveston, Brazoria, Fort Bend, Waller, Austin
+
+sa_geoids <- c("48029",
+               "48091",
+               "48187",
+               "48209",
+               "48453",
+               "48491",
+               "48021",
+               "48055")
+
+elpaso_geoids <- c("48141",
+                   "48229")
+
+
+kileen_temple_geoids <- c("48027",
+                          "48281",
+                          "48099"
+                          )
+# Bell, Lampasas, Coryell
+
+coll_station_geoids <- c("48041",
+                         "48051",
+                         "48395")
+# Brazos, Burleson, Robertson
+
+
+tyler_geoid <- c("48423")
+# Smith co
+
+lubbock_geoids <- c("48303",
+                    "48107",
+                    "48305")
+# Crosby, Lynn
+
+#CA 
+la_geoids <- c("06037",
+               "06059",
+               "06071",
+               "06065",
+               "06111"
+               )
+# LA, Orange, San Bernardino, Riverside, Ventura
+
+sf_bayarea_geoids <- c("06075",
+                       "06081",
+                       "06085",
+                       "06001",
+                       "06013",
+                       "06055",
+                       "06097",
+                       "06095",
+                       "06041"
+                )
+# sf, san mateo, santa clara, alameda, contra costa, napa, sonoma, solano,marin
+
+sand_geoids <- c("06073")
+
+chi_geoids <- c("17031",
+                "17043",
+                "17089",
+                "17097",
+                "17197",
+                "18089")
+# cook, dupage, kane, lake, will, lake county ind.
+
+phx_geoids <- c("04013",
+                "04021")
+tucson_geoids <- "04019"
+
+okc_geoids <- c("40109")
+# Oklahoma, Canadian, Cleveland, Pottawatomie
+
+# Prep fips 
+cw_r <- cw %>% 
+  select(`CBSA Code`,
+         `CBSA Title`, 
+         `Metropolitan/Micropolitan Statistical Area`,
+         `County/County Equivalent`,
+         `FIPS State Code`:`Central/Outlying County`) %>% 
+  mutate(fips = as.character(paste0(`FIPS State Code`, `FIPS County Code`)))
+```
+
+
+```{r}
+metro_flows <- flows %>% 
+  filter(GEOID1 %in% pop_estimates_aoi$GEOID) %>% 
+  filter(variable == "MOVEDIN") %>% 
+  filter(!is.na(GEOID2)) %>% 
+  mutate(county_name = str_remove(FULL1_NAME, " County, Texas")
+         ) %>%
+  # Aggregate to Metros 
+  st_set_geometry(NULL) %>%
+  left_join(., county_table, by = c("county_name" = "all_counties")
+            ) %>% 
+  group_by(megaregion, FULL2_NAME, GEOID2) %>% 
+  summarize(movedin = sum(estimate, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  # Label critical movers
+  mutate(mover_state = gsub(".*,", "", FULL2_NAME ),
+         #substr(GEOID2, 1, 2),
+    metro = case_when(GEOID2 %in% dfw_geoids ~ "Dallas-Fort Worth, TX",
+                      GEOID2 %in% hou_geoids ~ "Greater Houston, TX",
+                      GEOID2 %in% sa_geoids ~ "San Antonio-Austin, TX",
+                      GEOID2 %in% elpaso_geoids ~ "Greater El Paso, TX",
+                      GEOID2 %in% kileen_temple_geoids ~ "Kileen-Temple, TX",
+                      GEOID2 %in% coll_station_geoids ~ "College Station-Bryan, TX",
+                      GEOID2 %in% tyler_geoid ~ "Greater Tyler, TX",
+                      GEOID2 %in% lubbock_geoids ~ "Greater Lubbock, TX",
+                      # IL
+                      GEOID2 %in% chi_geoids ~ "Greater Chicago, IL",
+                      # CA
+                      GEOID2 %in% la_geoids ~ "Greater Los Angeles, CA",
+                      GEOID2 %in% sf_bayarea_geoids ~ "San Francisco Bay Area, CA",
+                      GEOID2 %in% sand_geoids ~ "Greater San Diego, CA",
+                      # AZ
+                      GEOID2 %in% phx_geoids ~ "Phoenix-Mesa, AZ",
+                      GEOID2 %in% tucson_geoids ~ "Greater Tucson, AZ",
+                      TRUE ~ NA
+                      )) %>% 
+  left_join(., cw_r,
+            by = c("GEOID2" = "fips")) %>% 
+  mutate(Metro = case_when(!is.na(metro) ~ metro,
+                                  TRUE ~ `CBSA Title`))
+
+```
+
+
+
+```{r}
+filter_to_moi <- function(x, m) { 
+  x %>% 
+  filter(megaregion == m) %>% 
+  filter(Metro != m)
+  }
+
+# STATE LEVEL MOVING SUMMARY
+saa_statelevel_movers <- filter_to_moi("San Antonio-Austin") %>% 
+  group_by(megaregion, mover_state) %>% 
+  summarize(movedin = sum(movedin, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  mutate(percent = round(movedin/sum(movedin) * 100, digits =2)) %>%
+  arrange(-movedin)
+
+dfw_statelevel_movers <- filter_to_moi("Dallas-Fort Worth") %>% 
+  filter(metro != "Dallas-Fort Worth, TX") %>% 
+  group_by(megaregion, mover_state) %>% 
+  summarize(movedin = sum(movedin, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  mutate(percent = round(movedin/sum(movedin) * 100, digits =2)) %>%
+  arrange(-movedin)
+write_csv(dfw_statelevel_movers,
+          paste0(outputs_folder, "dfw_state_level_movers.csv"))
+
+#  METRO MOVERS
+dfw_flows <- filter_to_moi(metro_flows, "Dallas-Fort Worth") %>% 
+    filter(Metro != "Dallas-Fort Worth, TX") %>%  
+  group_by(megaregion, Metro, `Metropolitan/Micropolitan Statistical Area`) %>% 
+  summarize(movedin = sum(movedin, na.rm = TRUE)) %>% 
+ ungroup() %>% 
+  mutate(percent = movedin/sum(movedin, na.rm = TRUE) * 100,
+         Metro = case_when(Metro == "New York-Newark-Jersey City, NY-NJ" ~ "New York Metro, NY-NJ",
+                           Metro == "Miami-Fort Lauderdale-West Palm Beach, FL" ~ "Greater Miami, FL",
+                           Metro == "Atlanta-Sandy Springs-Roswell, GA" ~ "Atlanta Metro, GA",
+                           Metro == "Washington-Arlington-Alexandria, DC-VA-MD-WV" ~ "District of Columbia-Maryland-Virginia",
+                           Metro == "Denver-Aurora-Centennial, CO" ~ "Denver Metro, CO",
+                           Metro == "Kansas City, MO-KS" ~ "Kansas City Metro, MO-KS",
+                           TRUE ~ Metro)
+         ) %>%
+  arrange(-movedin)
+
+saa_flows <- filter_to_moi(metro_flows, "San Antonio-Austin") %>% 
+  filter(Metro != "San Antonio-New Braunfels, TX") %>%
+  filter(Metro != "San Antonio-Austin, TX") %>%  
+  group_by(megaregion, Metro, `Metropolitan/Micropolitan Statistical Area`) %>% 
+  summarize(movedin = sum(movedin, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  mutate(percent = movedin/sum(movedin, na.rm = TRUE) * 100,
+         Metro = case_when(Metro == "New York-Newark-Jersey City, NY-NJ" ~ "New York Metro, NY-NJ",
+                           Metro == "Miami-Fort Lauderdale-West Palm Beach, FL" ~ "Greater Miami, FL",
+                           Metro == "Atlanta-Sandy Springs-Roswell, GA" ~ "Atlanta Metro, GA",
+                           Metro == "Washington-Arlington-Alexandria, DC-VA-MD-WV" ~ "District of Columbia-Maryland-Virginia",
+                           Metro == "Denver-Aurora-Centennial, CO" ~ "Denver Metro, CO",
+                           Metro == "Kansas City, MO-KS" ~ "Kansas City Metro, MO-KS",
+                           Metro == "McAllen-Edinburg-Mission, TX" ~ "McAllen Metro, TX",
+                           Metro == "Seattle-Tacoma-Bellevue, WA" ~ "Seattle-Tacoma, WA",
+                           TRUE ~ Metro)
+         ) %>%
+  arrange(-movedin)
+
+write_rds(dfw_flows,
+          paste0(data_folder, "dfw_movedin.rds"))
+write_rds(saa_flows, 
+          paste0(data_folder, "saa_movedin.rds"))
+
+
+gt::gt(dfw_flows %>% 
+         select(Metro, movedin, percent) %>% 
+         mutate(percent = round(percent, 1)) %>%
+         slice(1:20))
+
+
+dfw_flows %>% 
+         select(Metro, movedin, percent) %>% 
+         mutate(percent = round(percent, 1)) %>%
+         slice(1:20) %>% 
+  mutate(Rank = row_number(), .before = 1) %>%
+  rename(`Origin Metro` = "Metro",
+         Population = "movedin",
+         Percent = "percent") %>%
+  gt() %>% 
+  fmt_percent(
+  columns = "Percent",
+  rows = everything(),
+  decimals = 1,
+  drop_trailing_zeros = FALSE,
+  drop_trailing_dec_mark = TRUE,
+  scale_values = FALSE,
+  use_seps = TRUE,
+  accounting = FALSE,
+  dec_mark = "."
+) %>% 
+  fmt_number(columns = "Population",
+            drop_trailing_zeros = TRUE,
+               use_seps = TRUE
+             ) %>%
+    tab_options(
+    table.background.color = "#FFFFFF", 
+    table.border.top.color = "#FFFFFF",
+    column_labels.font.size = 10.5,
+    table.font.size = 10,
+    heading.title.font.size  = 24,
+    heading.title.font.weight = 'bold',
+    heading.subtitle.font.size = 11,
+    table.font.color = 'black',
+    data_row.padding = px(2), 
+    footnotes.font.size = 8,
+    source_notes.font.size = 9,
+    footnotes.padding = px(1), 
+  ) %>%
+   opt_table_font(
+     font = list(
+       "Rockwell Condensed")
+     ) %>% 
+  gtsave("dfw_top20_origins_num.png")
+gtsave(flowtable,
+       "saa_flowtable.pdf")
+f <- chromote::default_chromote_object() #get the f object
+f$close()
+```
 
 # Tabulate pop metrics to mega-region
 ```{r}
@@ -99,12 +379,11 @@ metro_pop_counts <- pop_estimates_aoi %>%
          ) %>% 
   left_join(., metro_growth_rt, by = "megaregion")
 
-metro_pop_counts %>% 
-  select(megaregion, pop_chg)
+metro_pop_counts
 ```
 
 ```{r}
-st_crs(pop_estimates_aoi)
+# Land Area
 
 metro_area <- pop_estimates_aoi %>% 
   st_transform(., crs = tx_ea_lambert) %>% 
