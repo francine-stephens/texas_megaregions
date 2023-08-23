@@ -20,6 +20,7 @@ options(tigris_use_cache = TRUE)
 data_folder <- "data/"
 outputs_folder <- "outputs/"
 source("geographic_parameters.R")
+us_prj <- 5070
 
 # Data
 county_seats_sf <- readRDS(paste0(
@@ -28,7 +29,17 @@ county_seats_sf <- readRDS(paste0(
 pop_estimates <- readRDS(paste0(
   data_folder, 
   "population_estimates_2022.rds"))
+#cw <- readxl::read_excel("cbsa_met_county_fips_cw.xlsx")
+dfw_flows <- readRDS(paste0(data_folder, "dfw_movedin.rds"))
+saa_flows <- readRDS(paste0(data_folder, "saa_movedin.rds"))
 
+us_states <- states(cb = TRUE, year =2022) %>% 
+  shift_geometry()
+
+metros <- core_based_statistical_areas(cb = TRUE, year = 2021) %>% 
+  shift_geometry() %>% 
+  st_transform(., crs = us_prj) %>% 
+  st_centroid()
 ```
 
 # Clean Data
@@ -45,7 +56,7 @@ pop_estimates_aoi <- pop_estimates %>%
 
 ```
 
-# Reference Map counties in Metro Regions
+# Reference Map of counties in Metro Regions
 ```{r}
 ## Font to Select
 # Rockwell already registered with windowsFonts().
@@ -56,6 +67,7 @@ pop_estimates_aoi <- pop_estimates %>%
 canva_orange <- "#f49619"
 c_white <- "#ffffff"
 web_orange <- "#e6a532"
+web_blue <- "#3273e6"
 
 # SA-A
 saa_county_layer <- pop_estimates_aoi %>%  
@@ -117,4 +129,65 @@ ggsave(paste0(outputs_folder,
               "dfw.pdf"))
 ```
 
+## Map of Flows
+```{r}
+
+# US STATES LAYER
+dropped_geoms <- c("66", "60", "69", "78")
+us_states_layer <- us_states %>% 
+            filter(!GEOID %in% dropped_geoms) %>% 
+  st_transform(., crs = 5070)
+
+
+
+# METRO LAYER
+saa_cent <- saa_county_layer %>% 
+          st_transform(., crs = us_prj) %>% 
+  group_by(megaregion) %>% 
+  summarize() %>% 
+  ungroup() %>%
+  st_centroid() %>% 
+  mutate(dest_long = unlist(map(.$geometry,1)),
+         dest_lat = unlist(map(.$geometry,2))) %>% 
+  st_set_geometry(NULL)
+
+
+dfw_cent <- dfw_county_layer %>% 
+          st_transform(., crs = us_prj) %>% 
+  group_by(megaregion) %>% 
+  summarize() %>% 
+  ungroup() %>%
+  st_centroid() %>% 
+  mutate(dest_long = unlist(map(.$geometry,1)),
+         dest_lat = unlist(map(.$geometry,2))) %>% 
+  st_set_geometry(NULL)
+
+
+metros_flows_coords <- metros %>% 
+  select(GEOID, NAME, NAMELSAD) %>%
+  mutate(origin_long = unlist(map(.$geometry,1)),
+           origin_lat = unlist(map(.$geometry,2))) %>% 
+  st_set_geometry(NULL)
+
+
+ggplot() + 
+  # Base Layer
+  geom_sf(data = us_states_layer,
+          fill = "#ECECEC", color = "#D3D3D3", size = 2, linewidth = 1.2, alpha = 0.95) + 
+  # SAA 
+  geom_sf(data = saa_county_layer %>% 
+          st_transform(., crs = us_prj), 
+          fill = web_orange, color = web_orange, alpha = 0.5,
+          size = 2) + 
+  # DFW
+  geom_sf(data = dfw_county_layer %>% 
+          st_transform(., crs = us_prj), 
+          fill = web_blue, color = web_blue, alpha = 0.5,
+          size = 2) + 
+  # FLOWS
+  
+  # Styling
+  coord_sf(datum = NA) + 
+  theme_void()
+```
 

@@ -230,7 +230,8 @@ metro_flows <- flows %>%
   left_join(., cw_r,
             by = c("GEOID2" = "fips")) %>% 
   mutate(Metro = case_when(!is.na(metro) ~ metro,
-                                  TRUE ~ `CBSA Title`))
+                                  TRUE ~ `CBSA Title`)) %>% 
+  filter(movedin > 0)
 
 ```
 
@@ -264,7 +265,7 @@ write_csv(dfw_statelevel_movers,
 #  METRO MOVERS
 dfw_flows <- filter_to_moi(metro_flows, "Dallas-Fort Worth") %>% 
     filter(Metro != "Dallas-Fort Worth, TX") %>%  
-  group_by(megaregion, Metro, `Metropolitan/Micropolitan Statistical Area`) %>% 
+  group_by(megaregion, Metro, `Metropolitan/Micropolitan Statistical Area`, `CBSA Code`) %>% 
   summarize(movedin = sum(movedin, na.rm = TRUE)) %>% 
  ungroup() %>% 
   mutate(percent = movedin/sum(movedin, na.rm = TRUE) * 100,
@@ -281,7 +282,7 @@ dfw_flows <- filter_to_moi(metro_flows, "Dallas-Fort Worth") %>%
 saa_flows <- filter_to_moi(metro_flows, "San Antonio-Austin") %>% 
   filter(Metro != "San Antonio-New Braunfels, TX") %>%
   filter(Metro != "San Antonio-Austin, TX") %>%  
-  group_by(megaregion, Metro, `Metropolitan/Micropolitan Statistical Area`) %>% 
+  group_by(megaregion, Metro, `Metropolitan/Micropolitan Statistical Area`, `CBSA Code`) %>% 
   summarize(movedin = sum(movedin, na.rm = TRUE)) %>% 
   ungroup() %>% 
   mutate(percent = movedin/sum(movedin, na.rm = TRUE) * 100,
